@@ -3,14 +3,13 @@
 #include <iostream>
 #include <cstdint>
 #include <string>
+#include <memory>
 #include <string_view>
 
 using namespace std;
 
 ByteStream::ByteStream( uint64_t capacity ) 
-: capacity_( capacity ), capacity_now_( capacity ) {
-  data_channel_.reserve(capacity);
-}
+: capacity_( capacity ), capacity_now_( capacity ) {}
 
 bool Writer::is_closed() const
 {
@@ -26,10 +25,16 @@ void Writer::push( string data )
   
   uint64_t s = data.size();
   uint64_t pos = min( s, available_capacity() );
+
+  if (pos == 0) return;
+
   num_bytes_pushed_ += pos;
   capacity_now_ -= pos;
-  // data_channel_.append( move( data.substr( 0, pos ) ) );
-  data_channel_.append( data.substr( 0, pos ) );
+  shared_ptr<string> ptr = make_shared<string>(data, 0, pos);
+  ptr_channel_.push( ptr );
+  if (ptr_channel_.size() == 1) {
+    s_view_ = string_view(ptr.get()->c_str(), pos);
+  }
   return;
 }
 
@@ -66,19 +71,29 @@ uint64_t Reader::bytes_popped() const
 string_view Reader::peek() const
 {
   // Your code here.
-  return this->data_channel_;
-  // return { string_view( &data_channel_.front(), 1 ) };
+  // return this->data_channel_;
+  return s_view_;
 }
 
 void Reader::pop( uint64_t len )
 {
-  // Your code here.
   len = min(len, bytes_buffered());
-
-  capacity_now_ += len;
-  num_bytes_poped_ += len;
-
-  data_channel_.erase(0, len);
+  uint64_t temp_len = len;
+  // Your code here.
+  while ( len > 0 )
+  {
+    auto s_size = s_view_.size();
+    if ( s_size <= len ) {
+      ptr_channel_.pop();
+      len -= s_size;
+      s_view_ = ptr_channel_.empty() ? string_view() : string_view(ptr_channel_.front().get()->c_str(), ptr_channel_.front().get()->size());
+    } else {
+      s_view_.remove_prefix(len);
+      break;
+    }
+  }
+  capacity_now_ += temp_len;
+  num_bytes_poped_ += temp_len;
   return;
 }
 
